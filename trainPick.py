@@ -30,7 +30,7 @@ def get_env_params(env):
               'action': env.action_space.shape[0],
               'action_max': env.action_space.high[0],
               }
-    params['max_timesteps'] = env._maxSteps
+    params['max_timesteps'] = int(env._maxSteps)
     return params
 
 
@@ -40,11 +40,13 @@ def launch(args):
     rend = False
     discreteAction = 0
     numControlledJoints = 9
-    fixed = True
+    actionRepeat = 1
+    fixed = False
+    maxStep = 1000
     # env = kukaReachGymEnvHer(urdfRoot=robot_data.getDataPath(), renders=rend, useIK=0, isDiscrete=discreteAction,
     #                          numControlledJoints=numControlledJoints, fixedPositionObj=fixed, includeVelObs=True)
-    env = kukaPickGymEnvHer(urdfRoot=robot_data.getDataPath(), renders=rend, useIK=0, isDiscrete=discreteAction,
-                             numControlledJoints=numControlledJoints, fixedPositionObj=fixed, includeVelObs=True, reward_type=2)
+    env = kukaPickGymEnvHer(urdfRoot=robot_data.getDataPath(),maxSteps=maxStep,renders=rend, useIK=0, isDiscrete=discreteAction,actionRepeat=actionRepeat,
+                             numControlledJoints=numControlledJoints, fixedPositionObj=fixed, includeVelObs=True, reward_type=1)
                              
     # get the environment parameters
     env_params = get_env_params(env)

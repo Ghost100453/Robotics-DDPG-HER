@@ -8,6 +8,7 @@ from utils import sync_networks, sync_grads
 from replay_buffer import replay_buffer
 from normalizer import normalizer
 from her import her_sampler
+import pandas as pd
 
 # from tensorboardX import SummaryWriter
 
@@ -33,7 +34,7 @@ class ddpg:
         self.actor_target_network.load_state_dict(self.actor_network.state_dict())
         self.critic_target_network.load_state_dict(self.critic_network.state_dict())
         # if use gpu
-        if self.args.cuda:
+        if self.args.cuda and torch.cuda.is_available():
             self.actor_network.cuda()
             self.critic_network.cuda()
             self.actor_target_network.cuda()
@@ -62,6 +63,10 @@ class ddpg:
             print('model path', self.model_path)
         
         # self.writer = SummaryWriter('./logs')
+        self.reward_list = []
+        self.reward_record = []
+        self.success_rate_list = []
+        self.success_list = []
 
     def learn(self):
         """
@@ -74,6 +79,7 @@ class ddpg:
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
                 reward_total = 0
                 for _ in range(self.args.num_rollouts_per_mpi):
+                    reward_temp = 0
                     # reset the rollouts
                     ep_obs, ep_ag, ep_g, ep_actions = [], [], [], []
                     # reset the environment
@@ -90,6 +96,7 @@ class ddpg:
                         # feed the actions into the environment
                         observation_new, reward, done, info = self.env.step(action)
                         reward_total += reward
+                        reward_temp += reward
                         obs_new = observation_new['observation']
                         ag_new = observation_new['achieved_goal']
                         # append rollouts
@@ -106,6 +113,8 @@ class ddpg:
                     mb_ag.append(ep_ag)
                     mb_g.append(ep_g)
                     mb_actions.append(ep_actions)
+                    self.success_list.append([epoch, cycle, info['is_success']])
+                    self.reward_list.append([epoch, cycle, reward_temp])
                 # convert them into arrays
                 mb_obs = np.array(mb_obs)
                 mb_ag = np.array(mb_ag)
@@ -121,6 +130,8 @@ class ddpg:
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network, self.critic_network)
                 print('[{}] epoch is: {}, cycle is : {}, total reward is {}.'.format(datetime.now(), epoch, cycle, reward_total))
+                self.reward_record.append([epoch, cycle, reward_total])
+                
                 # self.writer.add_scalar('reward', reward_total, epoch, epoch*50+cycle)
 
             # start to do the evaluation
@@ -129,7 +140,18 @@ class ddpg:
                 print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
                 torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
                             self.model_path + '/model.pt')
+            self.success_rate_list.append([epoch, success_rate])
+        
+        self.reward_list = pd.DataFrame(self.reward_list)
+        self.reward_record = pd.DataFrame(self.reward_record)
+        self.success_list = pd.DataFrame(self.success_list)
+        self.success_rate_list = pd.DataFrame(self.success_rate_list)
 
+        self.reward_list.to_excel(self.model_path+'/reward_list.xls')
+        self.reward_record.to_excel(self.model_path+'/reward_record.xls')
+        self.success_list.to_excel(self.model_path+'/success_list.xls')
+        self.success_rate_list.to_excel(self.model_path+'/success_rate_list.xls')
+        
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):
         obs_norm = self.o_norm.normalize(obs)
@@ -137,7 +159,7 @@ class ddpg:
         # concatenate the stuffs
         inputs = np.concatenate([obs_norm, g_norm])
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
-        if self.args.cuda:
+        if self.args.cuda and torch.cuda.is_available():
             inputs = inputs.cuda()
         return inputs
     
@@ -210,7 +232,7 @@ class ddpg:
         inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
         r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) 
-        if self.args.cuda:
+        if self.args.cuda and torch.cuda.is_available():
             inputs_norm_tensor = inputs_norm_tensor.cuda()
             inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
             actions_tensor = actions_tensor.cuda()

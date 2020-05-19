@@ -43,6 +43,7 @@ class ddpg_agent:
         self.her_module = her_sampler(self.args.replay_strategy, self.args.replay_k, self.env.compute_reward)
         # create the replay buffer
         self.buffer = replay_buffer(self.env_params, self.args.buffer_size, self.her_module.sample_her_transitions)
+        self.buffer2 = replay_buffer(self.env_params, self.args.buffer_size, self.her_module.sample_transitions)
         # create the normalizer
         self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
@@ -103,6 +104,7 @@ class ddpg_agent:
                 mb_actions = np.array(mb_actions)
                 # store the episodes
                 self.buffer.store_episode([mb_obs, mb_ag, mb_g, mb_actions])
+                self.buffer2.store_episode([mb_obs, mb_ag, mb_g, mb_actions])
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
@@ -180,7 +182,10 @@ class ddpg_agent:
     # update the network
     def _update_network(self):
         # sample the episodes
-        transitions = self.buffer.sample(self.args.batch_size)
+        if np.random.random()<0.5:
+            transitions = self.buffer.sample(self.args.batch_size)
+        else:
+            transitions = self.buffer2.sample(self.args.batch_size)
         # pre-process the observation and goal
         o, o_next, g = transitions['obs'], transitions['obs_next'], transitions['g']
         transitions['obs'], transitions['g'] = self._preproc_og(o, g)
